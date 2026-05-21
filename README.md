@@ -1,4 +1,4 @@
-# Call Center Tool — MVP (Round 1 + 2)
+# Call Center Tool — MVP (Round 1 + 2 + 3)
 
 Tool web per operatori call center di un e-commerce italiano in contrassegno (COD).
 Questo repository contiene **backend + UI operatore**. Le funzioni avanzate
@@ -173,6 +173,7 @@ Tutte le pagine sono in italiano, ottimizzate per tablet e desktop.
 | `/queue` | Coda chiamate full-page |
 | `/issues` | Tutti i problemi spedizione aperti |
 | `/kpi` | KPI dettagliati 24h / 7g / 30g |
+| `/supervisor` | **Dashboard supervisore** (KPI realtime + leaderboard operatori + trend chart + motivi non conversione + activity feed). Visibile solo a `SUPERVISOR`/`ADMIN`. |
 | `/customers/[id]` | Scheda cliente (l'area di lavoro principale dell'operatore) |
 | `/orders/[id]` | Dettaglio ordine + prodotti + spedizioni + upsell |
 | `/shipments/[trackingNumber]` | Dettaglio spedizione + timeline eventi |
