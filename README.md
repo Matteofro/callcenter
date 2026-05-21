@@ -1,10 +1,12 @@
-# Call Center Tool — Backend MVP
+# Call Center Tool — MVP (Round 1 + 2)
 
 Tool web per operatori call center di un e-commerce italiano in contrassegno (COD).
-Questo repository contiene **solo il backend** (Round 1). La UI arriva nel Round 2.
+Questo repository contiene **backend + UI operatore**. Le funzioni avanzate
+(pannello admin upsell, export, integrazione logistica reale) sono nei round
+successivi (vedi in fondo).
 
 > Stack: Next.js 15 (App Router) · TypeScript · PostgreSQL (Neon) · Prisma ·
-> NextAuth · SSE realtime · HMAC webhook ingest
+> TailwindCSS · shadcn/ui · NextAuth · SSE realtime · HMAC webhook ingest
 
 ## Documentazione
 
@@ -159,6 +161,31 @@ es.onerror = () => {
   }, 20_000);
 };
 ```
+
+## UI operatore
+
+Tutte le pagine sono in italiano, ottimizzate per tablet e desktop.
+
+| Path | Descrizione |
+| --- | --- |
+| `/login` | Login email + password |
+| `/` | Dashboard con KPI 24h, coda chiamate e problemi spedizione aperti |
+| `/queue` | Coda chiamate full-page |
+| `/issues` | Tutti i problemi spedizione aperti |
+| `/kpi` | KPI dettagliati 24h / 7g / 30g |
+| `/customers/[id]` | Scheda cliente (l'area di lavoro principale dell'operatore) |
+| `/orders/[id]` | Dettaglio ordine + prodotti + spedizioni + upsell |
+| `/shipments/[trackingNumber]` | Dettaglio spedizione + timeline eventi |
+
+Caratteristiche chiave UI:
+- **Ricerca globale** in alto: telefono / email / nome / ID ordine. Scorciatoia ⌘K.
+- **Aggiornamento realtime**: ogni pagina si rinfresca automaticamente su evento SSE
+  senza ricaricare. Indicatore di connessione nell'header (verde = SSE, giallo = polling).
+- **Pannello chiamata** sulla scheda cliente: apri chiamata, scegli esito tra i 17 stati,
+  aggiungi note, registra upsell — tutto senza cambiare pagina.
+- **Touch-friendly**: tutti i bottoni cliccabili sono almeno 44px (tap target).
+- **Server Components** per la prima paint: dashboard e scheda cliente sono
+  renderizzate lato server con una sola query Prisma — TTFB target <500ms.
 
 ## Caveat MVP
 
