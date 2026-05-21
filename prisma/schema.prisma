@@ -1,0 +1,424 @@
+// Prisma schema — Call Center Tool for COD e-commerce
+// All IDs are UUIDs. Every model has createdAt/updatedAt where applicable.
+// Indexes are placed on every field used in search/list queries.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  OPERATOR
+  SUPERVISOR
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum CustomerStatus {
+  ACTIVE
+  BLOCKED
+  VIP
+  NEW
+}
+
+enum PaymentMethod {
+  COD          // contrassegno
+  CARD
+  BANK_TRANSFER
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+  FAILED
+}
+
+enum OrderStatus {
+  CREATED
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  RETURNED
+  CANCELLED
+  ON_HOLD
+}
+
+enum ShipmentDeliveryStatus {
+  PENDING
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  REFUSED
+  RETURNED
+  LOST
+  DELAYED
+  EXCEPTION
+}
+
+/// Call outcome state machine. Italian labels live in src/lib/i18n/callStatus.ts
+enum CallStatus {
+  TO_CALL              // Da chiamare
+  ANSWERED             // Risposto
+  NO_ANSWER            // Non risposto
+  WRONG_NUMBER         // Numero errato
+  BUSY                 // Occupato
+  CALL_LATER           // Richiamare
+  CALLBACK_SCHEDULED   // Call back programmato
+  ORDER_CONFIRMED      // Ordine confermato
+  ORDER_CANCELLED      // Ordine annullato
+  RETURN_REQUESTED     // Reso richiesto
+  REFUND_REQUESTED     // Rimborso richiesto
+  SHIPPING_ISSUE       // Problema spedizione
+  UPSELL_DONE          // Upsell effettuato
+  CROSSSELL_DONE       // Cross-sell effettuato
+  NOT_INTERESTED       // Cliente non interessato
+  COMPLAINT_OPENED     // Reclamo aperto
+  CASE_RESOLVED        // Caso risolto
+}
+
+enum UpsellOutcomeStatus {
+  ACCEPTED
+  REJECTED
+  DEFERRED
+}
+
+enum UpsellKind {
+  RELATED
+  BUNDLE
+  COMPLEMENT
+  UPGRADE
+}
+
+enum LogisticsEventType {
+  SHIPMENT_CREATED
+  SHIPMENT_PICKED_UP
+  SHIPMENT_IN_TRANSIT
+  SHIPMENT_OUT_FOR_DELIVERY
+  SHIPMENT_DELIVERED
+  SHIPMENT_REFUSED
+  SHIPMENT_RETURNED
+  SHIPMENT_LOST
+  SHIPMENT_DELAYED
+  SHIPMENT_EXCEPTION
+  ORDER_UPDATED
+  CUSTOMER_UPDATED
+  UNKNOWN
+}
+
+enum AuditSource {
+  USER
+  WEBHOOK
+  SYSTEM
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String     @unique
+  passwordHash String
+  fullName     String
+  role         UserRole   @default(OPERATOR)
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?
+  deletedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  calls     Call[]
+  auditLogs AuditLog[]
+
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+model Customer {
+  id            String         @id @default(uuid()) @db.Uuid
+  // E.164 normalized; raw input kept for fallback display
+  phoneE164     String         @unique
+  phoneRaw      String
+  email         String?
+  fullName      String
+  country       String         @default("IT")
+  status        CustomerStatus @default(NEW)
+  /// 0-100 internal risk score; >70 = flag operator
+  riskScore     Int            @default(0)
+  /// All-time gross spend in cents (EUR)
+  lifetimeValue Int            @default(0)
+  /// Free-text long history note shown in the call card
+  historyNotes  String?
+  deletedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders Order[]
+  calls  Call[]
+
+  @@index([email])
+  @@index([fullName])
+  @@index([status])
+  @@index([riskScore])
+  @@map("customers")
+}
+
+model Order {
+  id             String        @id @default(uuid()) @db.Uuid
+  /// Human-friendly short sequence (e.g. "037F1858")
+  externalRef    String        @unique
+  customerId     String        @db.Uuid
+  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  totalCents     Int
+  codAmountCents Int           @default(0)
+  /// Internal margin in cents — used by supervisor KPIs
+  marginCents    Int           @default(0)
+
+  paymentMethod  PaymentMethod @default(COD)
+  paymentStatus  PaymentStatus @default(PENDING)
+  status         OrderStatus   @default(CREATED)
+  shippingMethod String?
+  /// Free-text label used by ops (e.g. "Express Italy")
+  notes          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items     OrderItem[]
+  shipments Shipment[]
+  calls     Call[]
+  upsells   UpsellOutcome[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@index([status, paymentStatus])
+  @@map("orders")
+}
+
+model OrderItem {
+  id             String  @id @default(uuid()) @db.Uuid
+  orderId        String  @db.Uuid
+  order          Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  sku            String
+  name           String
+  quantity       Int     @default(1)
+  unitPriceCents Int
+  totalCents     Int
+  /// Optional category for upsell rules
+  category       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([sku])
+  @@index([category])
+  @@map("order_items")
+}
+
+model Shipment {
+  id              String                 @id @default(uuid()) @db.Uuid
+  orderId         String                 @db.Uuid
+  order           Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  trackingNumber  String                 @unique
+  carrier         String
+  shippedAt       DateTime?
+  etaAt           DateTime?
+  deliveredAt     DateTime?
+  deliveryStatus  ShipmentDeliveryStatus @default(PENDING)
+
+  isDelayed       Boolean                @default(false)
+  isRefused       Boolean                @default(false)
+  isLost          Boolean                @default(false)
+  isReturned      Boolean                @default(false)
+
+  /// Last raw status string from the carrier (for operator context)
+  lastCarrierStatus String?
+  lastEventAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events LogisticsEvent[]
+
+  @@index([orderId])
+  @@index([carrier])
+  @@index([deliveryStatus])
+  @@index([etaAt])
+  @@index([isDelayed])
+  @@map("shipments")
+}
+
+model Call {
+  id           String     @id @default(uuid()) @db.Uuid
+  customerId   String     @db.Uuid
+  customer     Customer   @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  orderId      String?    @db.Uuid
+  order        Order?     @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  operatorId   String     @db.Uuid
+  operator     User       @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+
+  status       CallStatus @default(TO_CALL)
+  /// Optional reason code clarifying the status (e.g. "ALREADY_DELIVERED")
+  outcomeReason String?
+  startedAt    DateTime?
+  endedAt      DateTime?
+  /// Duration in seconds; computed on close
+  durationSec  Int?
+  followUpAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notes   CallNote[]
+  upsells UpsellOutcome[]
+
+  @@index([customerId])
+  @@index([orderId])
+  @@index([operatorId])
+  @@index([status])
+  @@index([followUpAt])
+  @@index([status, followUpAt])
+  @@map("calls")
+}
+
+model CallNote {
+  id        String @id @default(uuid()) @db.Uuid
+  callId    String @db.Uuid
+  call      Call   @relation(fields: [callId], references: [id], onDelete: Cascade)
+  authorId  String @db.Uuid
+  body      String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([callId])
+  @@index([authorId])
+  @@map("call_notes")
+}
+
+model UpsellSuggestion {
+  id          String     @id @default(uuid()) @db.Uuid
+  triggerSku  String
+  suggestSku  String
+  kind        UpsellKind @default(RELATED)
+  /// Higher = preferred suggestion when multiple match
+  priority    Int        @default(0)
+  /// Optional discount in cents applied if accepted
+  discountCents Int      @default(0)
+  active      Boolean    @default(true)
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([triggerSku, suggestSku])
+  @@index([triggerSku])
+  @@index([suggestSku])
+  @@index([active])
+  @@map("upsell_suggestions")
+}
+
+model UpsellOutcome {
+  id            String              @id @default(uuid()) @db.Uuid
+  callId        String              @db.Uuid
+  call          Call                @relation(fields: [callId], references: [id], onDelete: Cascade)
+  orderId       String              @db.Uuid
+  order         Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  suggestedSku  String
+  /// What actually happened in the call
+  outcome       UpsellOutcomeStatus
+  /// Extra revenue produced (cents) if accepted
+  extraValueCents Int               @default(0)
+  notes         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([callId])
+  @@index([orderId])
+  @@index([suggestedSku])
+  @@index([outcome])
+  @@map("upsell_outcomes")
+}
+
+model LogisticsEvent {
+  id          String             @id @default(uuid()) @db.Uuid
+  /// Provider-supplied unique event id — used for idempotency
+  externalId  String             @unique
+  type        LogisticsEventType
+  /// Raw payload from the provider (verbatim)
+  payload     Json
+  /// Optional link to the affected shipment (resolved by the adapter)
+  shipmentId  String?            @db.Uuid
+  shipment    Shipment?          @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  /// Optional link to the affected order
+  orderId     String?            @db.Uuid
+  /// Optional link to the affected customer
+  customerId  String?            @db.Uuid
+
+  processed   Boolean            @default(false)
+  processedAt DateTime?
+  processingError String?
+  /// Provider name (e.g. "generic", "brt", "sda")
+  provider    String             @default("generic")
+
+  occurredAt  DateTime
+  createdAt   DateTime           @default(now())
+
+  @@index([type])
+  @@index([processed])
+  @@index([occurredAt])
+  @@index([provider])
+  @@index([shipmentId])
+  @@index([orderId])
+  @@index([customerId])
+  @@map("logistics_events")
+}
+
+model AuditLog {
+  id         String      @id @default(uuid()) @db.Uuid
+  userId     String?     @db.Uuid
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// e.g. "order.update", "call.status_change", "shipment.refused"
+  action     String
+  entityType String
+  entityId   String
+  oldValue   Json?
+  newValue   Json?
+  source     AuditSource @default(USER)
+  /// Optional context: IP, user-agent, webhook provider, etc.
+  metadata   Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([source])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
