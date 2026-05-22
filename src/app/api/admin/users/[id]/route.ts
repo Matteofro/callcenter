@@ -1,7 +1,7 @@
 /**
  * GET    /api/admin/users/:id  — single user detail
  * PATCH  /api/admin/users/:id  — update name / role / status / password
- * DELETE /api/admin/users/:id  — soft delete (sets deletedAt, status=INACTIVE)
+ * DELETE /api/admin/users/:id  — soft delete (sets deletedAt, status=DISABLED)
  *
  * Role gate: ADMIN only.
  * Safety: admins cannot demote / deactivate / delete themselves to avoid
@@ -133,7 +133,7 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
 
     await prisma.user.update({
       where: { id: existing.id },
-      data: { deletedAt: new Date(), status: "INACTIVE" },
+      data: { deletedAt: new Date(), status: "DISABLED" },
     });
 
     await writeAudit({

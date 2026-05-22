@@ -55,7 +55,7 @@ export function UsersTable({ rows, currentUserId }: { rows: UserRow[]; currentUs
 
   async function toggleActive(row: UserRow) {
     setBusyId(row.id);
-    const next: UserStatus = row.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+    const next: UserStatus = row.status === "ACTIVE" ? "DISABLED" : "ACTIVE";
     const r = await apiFetch(`/api/admin/users/${row.id}`, {
       method: "PATCH",
       body: JSON.stringify({ status: next }),

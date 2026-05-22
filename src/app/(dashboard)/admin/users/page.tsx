@@ -40,7 +40,7 @@ export default async function AdminUsersPage() {
     operators: users.filter((u) => u.role === "OPERATOR").length,
     supervisors: users.filter((u) => u.role === "SUPERVISOR").length,
     admins: users.filter((u) => u.role === "ADMIN").length,
-    inactive: users.filter((u) => u.status === "INACTIVE").length,
+    inactive: users.filter((u) => u.status === "DISABLED").length,
   };
 
   return (

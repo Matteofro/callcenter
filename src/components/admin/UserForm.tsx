@@ -159,7 +159,7 @@ export function UserForm({ mode, initial }: UserFormProps) {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ACTIVE">Attivo (può accedere)</SelectItem>
-                  <SelectItem value="INACTIVE">Disattivo (login bloccato)</SelectItem>
+                  <SelectItem value="DISABLED">Disattivo (login bloccato)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
