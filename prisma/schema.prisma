@@ -165,6 +165,8 @@ model Customer {
   lifetimeValue Int            @default(0)
   /// Free-text long history note shown in the call card
   historyNotes  String?
+  /// Shipping address payload (Logydrop format: nominative, address1/2, phone, city, zip, province, country, isValid)
+  address       Json?
   deletedAt     DateTime?
 
   createdAt DateTime @default(now())
@@ -421,4 +423,23 @@ model AuditLog {
   @@index([source])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+/// Long-lived auth tokens for external providers (Logydrop, future carriers, …).
+/// One row per provider. Refreshed by background jobs; never read by the UI.
+model SystemToken {
+  id               String    @id @default(uuid()) @db.Uuid
+  /// Provider slug, e.g. "logydrop"
+  provider         String    @unique
+  accessToken      String
+  refreshToken     String?
+  expiresAt        DateTime
+  refreshExpiresAt DateTime?
+  /// Provider-specific metadata (e.g. account email, last login at)
+  metadata         Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_tokens")
 }

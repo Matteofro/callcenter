@@ -1,4 +1,4 @@
-# Call Center Tool — MVP (Round 1 → 5)
+# Call Center Tool — MVP (Round 1 → 6)
 
 Tool web per operatori call center di un e-commerce italiano in contrassegno (COD).
 Questo repository contiene **backend + UI operatore**. Le funzioni avanzate
@@ -95,6 +95,7 @@ Tutti gli endpoint richiedono sessione autenticata, tranne il webhook (firmato H
 | `GET/PATCH/DELETE` | `/api/admin/upsell-suggestions/:id` | ADMIN | CRUD regola |
 | `GET` | `/api/reports/preview?entity=&from=&to=` | SUPERVISOR/ADMIN | conta righe export |
 | `GET` | `/api/reports/:entity?from=&to=` | SUPERVISOR/ADMIN | streaming CSV |
+| `POST/GET` | `/api/cron/logydrop` | `Bearer CRON_SECRET` | tick polling Logydrop (Vercel Cron) |
 
 Tutte le risposte usano la forma:
 
@@ -197,13 +198,38 @@ Caratteristiche chiave UI:
 - **Server Components** per la prima paint: dashboard e scheda cliente sono
   renderizzate lato server con una sola query Prisma — TTFB target <500ms.
 
+## Integrazione Logydrop (Round 6)
+
+L'adapter Logydrop **non usa webhook** (Logydrop non li espone) ma fa **polling
+ogni 2 minuti** via Vercel Cron — vedi `docs/LOGYDROP_INTEGRATION.md` per i dettagli.
+
+Setup produzione:
+1. Imposta `LOGYDROP_EMAIL` / `LOGYDROP_PASSWORD` su Vercel
+2. Imposta `CRON_SECRET` (Vercel lo aggiunge in automatico nei cron registrati)
+3. Esegui `pnpm prisma:deploy` (la migration `logydrop_integration` aggiunge
+   `SystemToken` e `Customer.address`)
+4. Vercel Cron pesca lo schedule da `vercel.json`
+
+Forzare un tick manualmente:
+```bash
+curl -X POST https://your-app.vercel.app/api/cron/logydrop \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+Import storico (CSV manuale, one-shot):
+```bash
+pnpm tsx scripts/import-logydrop-csv.ts ~/Downloads/export.csv
+# o per provarlo senza scrivere nulla:
+pnpm tsx scripts/import-logydrop-csv.ts ~/Downloads/export.csv --dry-run
+```
+
 ## Caveat MVP
 
 - Il pub/sub realtime è **in-process**: su Vercel multi-istanza alcuni eventi
   possono non raggiungere tutti i client SSE. Il polling fallback copre il caso.
   Sostituzione con Redis/Upstash pianificata (vedi `docs/ASSUMPTIONS.md`).
-- Niente rate limiting. Niente background workers. Niente CSV export. Tutto su
-  roadmap dei round successivi.
+- Niente rate limiting (call center interno). Cron Logydrop ogni 2 minuti
+  richiede Vercel Pro (Hobby supporta solo cron giornalieri).
 
 ## Prossimi round
 

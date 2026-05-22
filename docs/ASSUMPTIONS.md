@@ -37,13 +37,19 @@ Ogni voce indica: cosa ho assunto, perché, e come cambiarla in futuro.
 - **Cambiare**: introdurre Redis/Upstash pub/sub (debito tecnico noto). Lo schema dei messaggi
   resta lo stesso, cambia solo `src/lib/pubsub.ts`.
 
-## Webhook logistica
-- **Assunto**: provider sconosciuto al momento dell'MVP — esiste solo un **adapter generico**
-  che si aspetta l'envelope canonico definito in `src/lib/validation/logistics.ts`.
-- **Verifica**: HMAC-SHA256 su `${timestamp}.${rawBody}`, header `X-Signature`,
-  replay window di 300 secondi (configurabile), idempotency su `externalId` (unique index).
-- **Cambiare**: quando arriverà la doc reale del provider, creiamo `src/lib/logistics/adapters/<nome>.ts`
-  che traduce il payload reale nell'envelope canonico e selezioniamo l'adapter dal route handler.
+## Logistica — Logydrop (Round 6)
+- **Adapter attivo**: `src/lib/logistics/adapters/logydrop.ts`. Logydrop NON espone
+  webhook in uscita — facciamo polling ogni 2 minuti su `GET https://api.logydrop.com/orders`
+  via Vercel Cron + ricostruiamo gli eventi mancanti facendo diff con il nostro DB.
+- **Auth**: nessuna API key disponibile. Login con email/password admin (env
+  `LOGYDROP_EMAIL`/`LOGYDROP_PASSWORD`). JWT ACCESS/REFRESH cookie cached in
+  `SystemToken` con refresh automatico 5min prima della scadenza.
+- **Limiti accettati**: l'API ritorna solo la coda corrente (~15 ordini), niente
+  paginazione né filtri. Lo storico (1500+ ordini) si recupera con
+  `scripts/import-logydrop-csv.ts` dal CSV export manuale.
+- **Webhook generico**: `src/lib/logistics/adapters/generic.ts` e
+  `/api/logistics/webhook` restano disponibili — utili per altri provider
+  futuri o per test. Vedi `docs/LOGYDROP_INTEGRATION.md` per il brief completo.
 
 ## Soft delete
 - **Assunto**: solo `User` e `Customer` hanno `deletedAt` (soft delete). Tutto il resto è hard delete con cascata FK.

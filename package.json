@@ -13,7 +13,9 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "prisma migrate reset --force && pnpm db:seed"
+    "db:reset": "prisma migrate reset --force && pnpm db:seed",
+    "logydrop:import": "tsx scripts/import-logydrop-csv.ts",
+    "logydrop:poll": "tsx -e \"import('./src/lib/logistics/adapters/logydrop').then(m=>m.pollLogydrop()).then(s=>console.log(JSON.stringify(s,null,2)))\""
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
