@@ -24,8 +24,9 @@ import type { RealtimeEvent } from "@/types/realtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-// Long-lived stream — allow up to 15 minutes on Vercel hobby; bump if needed.
-export const maxDuration = 900;
+// Long-lived stream — capped at 800s, the Vercel Pro max. The EventSource
+// client reconnects transparently when the stream ends.
+export const maxDuration = 800;
 
 const HEARTBEAT_MS = 15_000;
 
