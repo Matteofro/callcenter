@@ -1,4 +1,4 @@
-# Call Center Tool — MVP (Round 1 + 2 + 3)
+# Call Center Tool — MVP (Round 1 → 5)
 
 Tool web per operatori call center di un e-commerce italiano in contrassegno (COD).
 Questo repository contiene **backend + UI operatore**. Le funzioni avanzate
@@ -89,6 +89,12 @@ Tutti gli endpoint richiedono sessione autenticata, tranne il webhook (firmato H
 | `GET` | `/api/realtime/stream` | session | canale SSE (event-stream) |
 | `GET` | `/api/realtime/poll?since=` | session | fallback polling |
 | `GET` | `/api/dashboard/kpi?hours=24` | session | KPI aggregati |
+| `GET` | `/api/supervisor/overview?range=24h\|7d\|30d` | SUPERVISOR/ADMIN | overview supervisore |
+| `GET` | `/api/admin/upsell-suggestions` | ADMIN | lista regole con stats |
+| `POST` | `/api/admin/upsell-suggestions` | ADMIN | nuova regola |
+| `GET/PATCH/DELETE` | `/api/admin/upsell-suggestions/:id` | ADMIN | CRUD regola |
+| `GET` | `/api/reports/preview?entity=&from=&to=` | SUPERVISOR/ADMIN | conta righe export |
+| `GET` | `/api/reports/:entity?from=&to=` | SUPERVISOR/ADMIN | streaming CSV |
 
 Tutte le risposte usano la forma:
 
@@ -174,6 +180,9 @@ Tutte le pagine sono in italiano, ottimizzate per tablet e desktop.
 | `/issues` | Tutti i problemi spedizione aperti |
 | `/kpi` | KPI dettagliati 24h / 7g / 30g |
 | `/supervisor` | **Dashboard supervisore** (KPI realtime + leaderboard operatori + trend chart + motivi non conversione + activity feed). Visibile solo a `SUPERVISOR`/`ADMIN`. |
+| `/reports` | **Export CSV** di ordini / chiamate / upsell / spedizioni con date range. Visibile solo a `SUPERVISOR`/`ADMIN`. |
+| `/admin/upsell` | **Admin regole upsell**: lista regole con stats (acceptance rate, extra ricavi). Visibile solo a `ADMIN`. |
+| `/admin/upsell/new` · `/admin/upsell/[id]` | Form per creare/modificare/eliminare una regola di suggerimento. |
 | `/customers/[id]` | Scheda cliente (l'area di lavoro principale dell'operatore) |
 | `/orders/[id]` | Dettaglio ordine + prodotti + spedizioni + upsell |
 | `/shipments/[trackingNumber]` | Dettaglio spedizione + timeline eventi |
