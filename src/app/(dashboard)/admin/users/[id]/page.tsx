@@ -4,9 +4,10 @@ import { UserForm } from "@/components/admin/UserForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function EditUserPage({ params }: { params: { id: string } }) {
+export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const user = await prisma.user.findUnique({
-    where: { id: params.id },
+    where: { id },
     select: { id: true, email: true, fullName: true, role: true, status: true, deletedAt: true },
   });
   if (!user || user.deletedAt) notFound();

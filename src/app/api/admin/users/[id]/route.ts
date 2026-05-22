@@ -19,12 +19,13 @@ export const dynamic = "force-dynamic";
 
 const BCRYPT_COST = 12;
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   return handle(async () => {
     await requireRole(["ADMIN"]);
+    const { id } = await ctx.params;
 
     const user = await prisma.user.findUnique({
-      where: { id: params.id },
+      where: { id },
       select: {
         id: true,
         email: true,
@@ -43,12 +44,13 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   })();
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   return handle(async () => {
     const session = await requireRole(["ADMIN"]);
+    const { id } = await ctx.params;
     const parsed = userUpdateSchema.parse(await req.json());
 
-    const existing = await prisma.user.findUnique({ where: { id: params.id } });
+    const existing = await prisma.user.findUnique({ where: { id } });
     if (!existing || existing.deletedAt) throw errors.notFound("Utente");
 
     // Self-protection: an admin cannot demote or deactivate themselves
@@ -114,11 +116,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   })();
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   return handle(async () => {
     const session = await requireRole(["ADMIN"]);
+    const { id } = await ctx.params;
 
-    const existing = await prisma.user.findUnique({ where: { id: params.id } });
+    const existing = await prisma.user.findUnique({ where: { id } });
     if (!existing || existing.deletedAt) throw errors.notFound("Utente");
 
     if (existing.id === session.user.id) {
