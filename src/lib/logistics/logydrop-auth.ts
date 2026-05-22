@@ -18,7 +18,7 @@
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 
-const PROVIDER = "logydrop";
+export const PROVIDER = "logydrop";
 const BASE_URL = "https://api.logydrop.com";
 const REFRESH_BUFFER_MS = 5 * 60_000; // refresh 5 minutes before expiry
 

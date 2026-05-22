@@ -1,18 +1,25 @@
 /**
  * Logydrop adapter — poll + reconcile.
  *
- * Polling strategy (documented in docs/LOGYDROP_INTEGRATION.md):
- *   - Logydrop's GET /orders returns ONLY the active queue (~15 records),
- *     ignores every filter/cursor, has no webhook system.
- *   - We poll every 2 minutes (Vercel Cron), diff with our DB, and emit
- *     LogisticsEvent rows for each delta — the same eventing surface the
- *     generic webhook adapter uses, so the rest of the system is unaware
- *     this is poll-driven.
+ * Polling strategy (confirmed via live API inspection):
+ *   - Logydrop exposes GET /orders at api.logydrop.com — cookie-JWT auth,
+ *     no webhook system, no API keys.
+ *   - Supports: perPage up to 100, page cursor, where[updatedAt][gte] filter.
+ *   - We poll every 2 minutes (Vercel Cron) using INCREMENTAL delta:
+ *       GET /orders?perPage=100&page=N&where[updatedAt][gte]=<lastPollAt>
+ *     We loop pages until we get an empty page, then persist `lastPollAt`.
+ *   - First run (no lastPollAt): fetches orders updated in the last 7 days.
+ *   - Each delta is reconciled against our DB and emits LogisticsEvent rows —
+ *     same eventing surface as the generic webhook adapter.
+ *
+ * Confirmed order statuses (from live data 2026-05-22):
+ *   PENDING, TOPAY, CONFIRMED, PROCESSING, WAITING_FOR_WITHDRAW,
+ *   ACCREDITED, DELIVERED, CANCELED, RETURNED_TO_SENDER
  *
  * Order matching: Order.externalRef ↔ Logydrop order `id` (hex string).
  * Customer matching: phoneE164 normalized from shippingAddress.phone.
  * Shipment matching: trackingNumber = shippingExternalId (created lazily when
- * the tracking is actually assigned by Logydrop — until then we skip the shipment).
+ * the tracking is actually assigned by Logydrop — until then we skip).
  */
 import type { Prisma, OrderStatus, ShipmentDeliveryStatus, LogisticsEventType, PaymentStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -20,7 +27,7 @@ import { writeAudit } from "@/lib/audit";
 import { publish } from "@/lib/pubsub";
 import { logger, maskPhone } from "@/lib/logger";
 import { tryNormalizePhone } from "@/lib/phone";
-import { logydropGet } from "@/lib/logistics/logydrop-auth";
+import { logydropGet, PROVIDER as AUTH_PROVIDER } from "@/lib/logistics/logydrop-auth";
 
 // ─── Logydrop response shapes (subset we depend on) ───────────────────────
 // See docs/LOGYDROP_INTEGRATION.md for the full schema dump.
@@ -96,22 +103,27 @@ interface OrdersListResponse {
 }
 
 // ─── Status mapping ───────────────────────────────────────────────────────
-// Verified values: PENDING, TOPAY, PROCESSING, CONFIRMED.
-// Other names guessed from the CSV export and Logydrop UI strings.
+// Confirmed live values (2026-05-22): PENDING, TOPAY, CONFIRMED, PROCESSING,
+// WAITING_FOR_WITHDRAW, ACCREDITED, DELIVERED, CANCELED, RETURNED_TO_SENDER
 const ORDER_STATUS_MAP: Record<string, OrderStatus> = {
-  PENDING: "CREATED",
-  TOAUTHORIZE: "CREATED",
-  TOPAY: "ON_HOLD",
-  PROCESSING: "PROCESSING",
-  CONFIRMED: "CONFIRMED",
-  SHIPPED: "SHIPPED",
-  INTRANSIT: "IN_TRANSIT",
-  IN_TRANSIT: "IN_TRANSIT",
-  OUTFORDELIVERY: "OUT_FOR_DELIVERY",
-  DELIVERED: "DELIVERED",
-  RETURNED: "RETURNED",
-  CANCELLED: "CANCELLED",
+  // Active / pre-shipment
+  PENDING: "CREATED",             // received, not yet processed
+  TOPAY: "ON_HOLD",               // Anticipato — waiting for upfront payment
+  CONFIRMED: "CONFIRMED",         // confirmed by call center (COD)
+  PROCESSING: "PROCESSING",       // being packed / label generated
+  WAITING_FOR_WITHDRAW: "SHIPPED", // handed to carrier, awaiting pickup scan
+  // Post-delivery
+  ACCREDITED: "DELIVERED",        // COD collected, payment settled
+  DELIVERED: "DELIVERED",         // physically delivered
+  // Cancelled / returned
   CANCELED: "CANCELLED",
+  RETURNED_TO_SENDER: "RETURNED",
+  // Legacy / fallback (keep for CSV import compatibility)
+  TOAUTHORIZE: "CREATED",
+  CANCELLED: "CANCELLED",
+  RETURNED: "RETURNED",
+  SHIPPED: "SHIPPED",
+  IN_TRANSIT: "IN_TRANSIT",
   HOLD: "ON_HOLD",
 };
 
@@ -155,8 +167,45 @@ export interface PollSummary {
   startedAt: string;
 }
 
+const PER_PAGE = 100;
+// Default lookback for first run (no lastPollAt stored yet)
+const FIRST_RUN_LOOKBACK_MS = 7 * 24 * 60 * 60_000;
+
+/**
+ * Read lastPollAt from SystemToken.metadata (persisted by previous runs).
+ * Falls back to 7-day lookback on first run.
+ */
+async function getLastPollAt(): Promise<Date> {
+  try {
+    const row = await prisma.systemToken.findUnique({ where: { provider: AUTH_PROVIDER } });
+    const meta = row?.metadata as Record<string, unknown> | null;
+    if (meta?.lastPollAt && typeof meta.lastPollAt === "string") {
+      return new Date(meta.lastPollAt);
+    }
+  } catch { /* DB not ready yet — fall through */ }
+  return new Date(Date.now() - FIRST_RUN_LOOKBACK_MS);
+}
+
+/** Persist lastPollAt into the SystemToken metadata, merging with existing fields. */
+async function saveLastPollAt(ts: Date): Promise<void> {
+  try {
+    const row = await prisma.systemToken.findUnique({ where: { provider: AUTH_PROVIDER } });
+    if (!row) return; // no token row yet — will be created on next sign-in
+    const existingMeta = (row.metadata as Record<string, unknown>) ?? {};
+    await prisma.systemToken.update({
+      where: { provider: AUTH_PROVIDER },
+      data: {
+        metadata: { ...existingMeta, lastPollAt: ts.toISOString() } as Prisma.InputJsonValue,
+      },
+    });
+  } catch (e) {
+    logger.warn({ err: String(e) }, "Could not persist lastPollAt");
+  }
+}
+
 export async function pollLogydrop(): Promise<PollSummary> {
   const start = Date.now();
+  const pollStart = new Date(start);
   const summary: PollSummary = {
     fetched: 0,
     created: 0,
@@ -165,29 +214,53 @@ export async function pollLogydrop(): Promise<PollSummary> {
     skipped: 0,
     errors: [],
     durationMs: 0,
-    startedAt: new Date(start).toISOString(),
+    startedAt: pollStart.toISOString(),
   };
 
-  let payload: OrdersListResponse;
-  try {
-    payload = await logydropGet<OrdersListResponse>("/orders");
-  } catch (e) {
-    logger.error({ err: String(e) }, "Logydrop poll: fetch failed");
-    summary.errors.push({ orderId: "(fetch)", reason: String(e) });
-    summary.durationMs = Date.now() - start;
-    return summary;
+  const since = await getLastPollAt();
+  const sinceIso = since.toISOString();
+  logger.info({ since: sinceIso }, "Logydrop poll: incremental delta fetch");
+
+  // Paginate until we get an empty page
+  let page = 1;
+  let fetchError = false;
+  while (true) {
+    let payload: OrdersListResponse;
+    try {
+      payload = await logydropGet<OrdersListResponse>(
+        `/orders?page=${page}&perPage=${PER_PAGE}&where[updatedAt][gte]=${encodeURIComponent(sinceIso)}`
+      );
+    } catch (e) {
+      logger.error({ err: String(e), page }, "Logydrop poll: fetch failed");
+      summary.errors.push({ orderId: `(fetch page ${page})`, reason: String(e) });
+      fetchError = true;
+      break;
+    }
+
+    const orders = payload.data ?? [];
+    if (orders.length === 0) break;
+
+    summary.fetched += orders.length;
+    logger.debug({ page, count: orders.length }, "Logydrop poll: page fetched");
+
+    for (const o of orders) {
+      try {
+        const result = await reconcileOrder(o);
+        summary[result] += 1;
+      } catch (e) {
+        logger.error({ orderId: o.id, err: String(e) }, "Logydrop reconcile failed");
+        summary.errors.push({ orderId: o.id, reason: String(e) });
+      }
+    }
+
+    // If less than a full page, there are no more pages
+    if (orders.length < PER_PAGE) break;
+    page++;
   }
 
-  summary.fetched = payload.data?.length ?? 0;
-
-  for (const o of payload.data ?? []) {
-    try {
-      const result = await reconcileOrder(o);
-      summary[result] += 1;
-    } catch (e) {
-      logger.error({ orderId: o.id, err: String(e) }, "Logydrop reconcile failed");
-      summary.errors.push({ orderId: o.id, reason: String(e) });
-    }
+  // Persist the poll timestamp only if the fetch didn't fail at page 1
+  if (!fetchError) {
+    await saveLastPollAt(pollStart);
   }
 
   summary.durationMs = Date.now() - start;
