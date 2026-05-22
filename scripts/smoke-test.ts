@@ -80,11 +80,12 @@ async function main() {
 
   // 4) Logydrop /orders fetch
   t0 = Date.now();
-  let firstOrder: { id: string; status: string; shippingAddress?: { phone?: string } } | null = null;
+  type SmokeOrder = { id: string; status: string; shippingAddress?: { phone?: string } };
+  let firstOrder: SmokeOrder | null = null;
   try {
     const { logydropGet } = await import("../src/lib/logistics/logydrop-auth");
     const since = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
-    const data = await logydropGet<{ data: typeof firstOrder[] }>(
+    const data = await logydropGet<{ data: SmokeOrder[] }>(
       `/orders?page=1&perPage=5&where[updatedAt][gte]=${encodeURIComponent(since)}`,
     );
     firstOrder = data.data?.[0] ?? null;
