@@ -26,7 +26,17 @@ const bus: EventEmitter =
 
 const CHANNEL = "realtime";
 
-export function publish(event: Omit<RealtimeEvent, "id" | "publishedAt">): void {
+/** Distributive Omit: applies Omit to each member of the union separately,
+ *  so discriminated variants keep their narrowed extra fields. Without this,
+ *  Omit<RealtimeEvent, "id"> collapses to a base shape and TS rejects per-
+ *  variant fields like `deliveryStatus`, `issue`, `status`, `outcome`. */
+type DistributiveOmit<T, K extends keyof RealtimeEvent> = T extends RealtimeEvent
+  ? Omit<T, K>
+  : never;
+
+export type RealtimeEventInput = DistributiveOmit<RealtimeEvent, "id" | "publishedAt">;
+
+export function publish(event: RealtimeEventInput): void {
   const enriched: RealtimeEvent = {
     ...event,
     id: randomUUID(),

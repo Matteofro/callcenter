@@ -6,7 +6,7 @@
  * input `data`, not the previous row. Callers should pass the `before`/`after`
  * snapshots they already have at hand.
  */
-import type { AuditSource } from "@prisma/client";
+import type { AuditSource, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
 export type AuditInput = {
@@ -30,7 +30,7 @@ export async function writeAudit(input: AuditInput): Promise<void> {
       oldValue: input.oldValue === undefined ? undefined : (input.oldValue as object),
       newValue: input.newValue === undefined ? undefined : (input.newValue as object),
       source: input.source ?? "USER",
-      metadata: input.metadata ?? undefined,
+      metadata: input.metadata === undefined ? undefined : (input.metadata as Prisma.InputJsonValue),
     },
   });
 }
