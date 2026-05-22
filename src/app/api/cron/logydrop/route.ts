@@ -20,7 +20,9 @@ import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// First run can fetch many pages of historical orders; bump well above the
+// default 60s. Vercel Pro caps at 800s.
+export const maxDuration = 800;
 
 function isAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;

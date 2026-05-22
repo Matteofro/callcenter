@@ -169,7 +169,10 @@ export interface PollSummary {
 
 const PER_PAGE = 100;
 // Default lookback for first run (no lastPollAt stored yet)
-const FIRST_RUN_LOOKBACK_MS = 7 * 24 * 60 * 60_000;
+// On first run we look back 24h only. The first cron tick scans this window;
+// subsequent ticks use the actual lastPollAt and are quick (delta only).
+// For older history, run scripts/import-logydrop-csv.ts manually.
+const FIRST_RUN_LOOKBACK_MS = 24 * 60 * 60_000;
 
 /**
  * Read lastPollAt from SystemToken.metadata (persisted by previous runs).
