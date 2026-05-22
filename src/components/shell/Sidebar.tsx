@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Home, PhoneCall, Truck, BarChart3, Users, Settings, FileBarChart } from "lucide-react";
+import { Home, PhoneCall, Truck, BarChart3, Users, Settings, FileBarChart, UserCog } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Item = {
@@ -21,6 +21,7 @@ const items: Item[] = [
   { href: "/supervisor", label: "Supervisore", icon: Users, roles: ["SUPERVISOR", "ADMIN"] },
   { href: "/reports", label: "Report", icon: FileBarChart, roles: ["SUPERVISOR", "ADMIN"] },
   { href: "/admin/upsell", label: "Admin Upsell", icon: Settings, roles: ["ADMIN"] },
+  { href: "/admin/users", label: "Operatori", icon: UserCog, roles: ["ADMIN"] },
 ];
 
 export function Sidebar() {

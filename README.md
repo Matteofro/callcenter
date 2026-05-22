@@ -10,8 +10,10 @@ successivi (vedi in fondo).
 
 ## Documentazione
 
+- **[`docs/DEPLOY.md`](docs/DEPLOY.md)** — guida completa Vercel + Neon + multi-operatore
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — executive summary, scelte e trade-off
 - [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md) — assunzioni esplicite fatte in assenza di specifiche
+- [`docs/LOGYDROP_INTEGRATION.md`](docs/LOGYDROP_INTEGRATION.md) — dettaglio integrazione Logydrop
 - [`prisma/schema.prisma`](prisma/schema.prisma) — modello dati completo (10 entità + enum)
 
 ## Requisiti
@@ -50,8 +52,11 @@ pnpm install                # installa dipendenze
 cp .env.example .env        # configura
 pnpm prisma:migrate         # crea tabelle (prima volta: nome migration "init")
 pnpm db:seed                # popola dati di esempio
+pnpm smoke                  # verifica DB + Logydrop (read-only, no scrittura)
 pnpm dev                    # avvia http://localhost:3000
 ```
+
+> Per il deploy in produzione (Vercel + Neon + multi-operatore) vedi **[`docs/DEPLOY.md`](docs/DEPLOY.md)**.
 
 Credenziali di default dopo `db:seed`:
 
@@ -93,6 +98,10 @@ Tutti gli endpoint richiedono sessione autenticata, tranne il webhook (firmato H
 | `GET` | `/api/admin/upsell-suggestions` | ADMIN | lista regole con stats |
 | `POST` | `/api/admin/upsell-suggestions` | ADMIN | nuova regola |
 | `GET/PATCH/DELETE` | `/api/admin/upsell-suggestions/:id` | ADMIN | CRUD regola |
+| `GET` | `/api/admin/users` | ADMIN | lista operatori |
+| `POST` | `/api/admin/users` | ADMIN | crea operatore |
+| `GET/PATCH/DELETE` | `/api/admin/users/:id` | ADMIN | CRUD operatore (soft delete) |
+| `GET` | `/api/health` | pubblico | health check (DB + Logydrop status) |
 | `GET` | `/api/reports/preview?entity=&from=&to=` | SUPERVISOR/ADMIN | conta righe export |
 | `GET` | `/api/reports/:entity?from=&to=` | SUPERVISOR/ADMIN | streaming CSV |
 | `POST/GET` | `/api/cron/logydrop` | `Bearer CRON_SECRET` | tick polling Logydrop (Vercel Cron) |
@@ -184,6 +193,8 @@ Tutte le pagine sono in italiano, ottimizzate per tablet e desktop.
 | `/reports` | **Export CSV** di ordini / chiamate / upsell / spedizioni con date range. Visibile solo a `SUPERVISOR`/`ADMIN`. |
 | `/admin/upsell` | **Admin regole upsell**: lista regole con stats (acceptance rate, extra ricavi). Visibile solo a `ADMIN`. |
 | `/admin/upsell/new` · `/admin/upsell/[id]` | Form per creare/modificare/eliminare una regola di suggerimento. |
+| `/admin/users` | **Gestione operatori**: crea/disattiva/modifica account, reset password. Visibile solo a `ADMIN`. |
+| `/admin/users/new` · `/admin/users/[id]` | Form per creare/modificare un account utente. |
 | `/customers/[id]` | Scheda cliente (l'area di lavoro principale dell'operatore) |
 | `/orders/[id]` | Dettaglio ordine + prodotti + spedizioni + upsell |
 | `/shipments/[trackingNumber]` | Dettaglio spedizione + timeline eventi |

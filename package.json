@@ -15,7 +15,9 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force && pnpm db:seed",
     "logydrop:import": "tsx scripts/import-logydrop-csv.ts",
-    "logydrop:poll": "tsx -e \"import('./src/lib/logistics/adapters/logydrop').then(m=>m.pollLogydrop()).then(s=>console.log(JSON.stringify(s,null,2)))\""
+    "logydrop:poll": "tsx -e \"import('./src/lib/logistics/adapters/logydrop').then(m=>m.pollLogydrop()).then(s=>console.log(JSON.stringify(s,null,2)))\"",
+    "smoke": "tsx scripts/smoke-test.ts",
+    "smoke:full": "tsx scripts/smoke-test.ts --with-poll"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -15,7 +15,8 @@ export const config = {
     // - /api/auth/*       (NextAuth)
     // - /api/logistics/*  (webhook, HMAC-protected)
     // - /api/cron/*       (cron, Bearer-secret-protected)
+    // - /api/health       (public, used by uptime monitors)
     // - Next static assets
-    "/((?!login|api/auth|api/logistics|api/cron|_next/static|_next/image|favicon.ico).*)",
+    "/((?!login|api/auth|api/logistics|api/cron|api/health|_next/static|_next/image|favicon.ico).*)",
   ],
 };
