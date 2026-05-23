@@ -428,7 +428,76 @@ async function reconcileOrder(ld: LogydropOrder): Promise<ReconcileOutcome> {
     update: {}, // idempotent: nothing to change on duplicate
   });
 
+  // 6) Call queue task — preventive, only for orders we can still influence.
+  await reconcileCallTask(order.id, customer.id, order.status, order.paymentMethod);
+
   return outcome;
+}
+
+/** "Active" call statuses — a TO_CALL stays open until the operator works it. */
+const ACTIVE_CALL_STATUSES = [
+  "TO_CALL",
+  "NO_ANSWER",
+  "BUSY",
+  "CALL_LATER",
+  "CALLBACK_SCHEDULED",
+] as const;
+
+/**
+ * Maintains the "Coda chiamate" automatically based on order state.
+ *
+ * - Order in CREATED+COD  → ensure a TO_CALL exists (confirm before shipping)
+ * - Order in ON_HOLD+OTHER → ensure a TO_CALL exists (payment reminder)
+ * - Order in any closed/shipped/transit state → close any open TO_CALL
+ *   (because there is nothing preventive left to do; refused/lost cases
+ *   are surfaced via the "Problemi spedizione" section instead).
+ *
+ * Idempotent: safe to run on every reconcile.
+ */
+async function reconcileCallTask(
+  orderId: string,
+  customerId: string,
+  status: OrderStatus,
+  paymentMethod: string,
+): Promise<void> {
+  const needsCall =
+    (status === "CREATED" && paymentMethod === "COD") ||
+    (status === "ON_HOLD" && paymentMethod !== "COD");
+
+  const existing = await prisma.call.findFirst({
+    where: {
+      orderId,
+      status: { in: [...ACTIVE_CALL_STATUSES] },
+    },
+    select: { id: true, status: true },
+  });
+
+  if (needsCall && !existing) {
+    // Pick the admin as default operator. Production should round-robin
+    // across ACTIVE operators; that's a future improvement.
+    const operator = await prisma.user.findFirst({
+      where: { status: "ACTIVE", deletedAt: null, role: { in: ["ADMIN", "OPERATOR", "SUPERVISOR"] } },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    if (!operator) return; // no one to assign to yet
+    await prisma.call.create({
+      data: {
+        customerId,
+        orderId,
+        operatorId: operator.id,
+        status: "TO_CALL",
+      },
+    });
+    publish({ type: "call.updated", entityId: orderId, related: { customerId, orderId }, status: "TO_CALL" });
+  } else if (!needsCall && existing && existing.status === "TO_CALL") {
+    // Order moved out of "needs call" state without an operator working it —
+    // auto-close so the queue stays accurate.
+    await prisma.call.update({
+      where: { id: existing.id },
+      data: { status: "CASE_RESOLVED", endedAt: new Date(), outcomeReason: "auto_closed_by_status_change" },
+    });
+  }
 }
 
 async function reconcileShipment(orderId: string, customerId: string, ld: LogydropOrder): Promise<void> {
